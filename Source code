@@ -1,0 +1,251 @@
+# Upload the Dataset
+
+from google.colab import files
+
+uploaded = files.upload()
+
+
+
+#Load the Dataset
+
+import pandas as pd
+
+df = pd.read_csv('global_traffic_accidents.csv', sep=';')
+
+df = df.iloc[:,0].str.split(',', expand=True)
+
+df.columns = ['Accident ID', 'Date', 'Time', 'Location', 'Latitude', 'Longitude', 
+
+              'Weather Condition', 'Road Condition', 'Vehicles Involved', 
+
+              'Casualties', 'Cause']
+
+
+
+# Data Exploration
+
+print("Shape:", df.shape)
+
+print("Columns:", df.columns.tolist())
+
+print(df.head())
+
+print(df.describe(include='all'))
+
+
+
+# Check for Missing Values and Duplicates
+
+print(df.isnull().sum())
+
+print("Duplicate rows:", df.duplicated().sum())
+
+
+
+# Visualize a Few Features
+
+import seaborn as sns
+
+import matplotlib.pyplot as plt
+
+sns.histplot(df['Casualties'].astype(float), kde=True)
+
+plt.title('Distribution of Casualties')
+
+plt.xlabel('Number of Casualties')
+
+plt.show()
+
+
+
+sns.boxplot(x='Weather Condition', y=df['Casualties'].astype(float), data=df)
+
+plt.xticks(rotation=45)
+
+plt.title('Weather Condition vs Casualties')
+
+plt.show()
+
+
+
+# Identify Target and Features
+
+target = 'Casualties'
+
+features = df.columns.drop(target)
+
+print("Features:", features)
+
+
+
+# Convert Categorical Columns to Numerical
+
+categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+
+categorical_cols.remove('Casualties')  # Exclude target if it's object
+
+print("Categorical Columns:", categorical_cols)
+
+
+
+# One-Hot Encoding
+
+df_encoded = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
+
+df_encoded['Casualties'] = pd.to_numeric(df_encoded['Casualties'], errors='coerce')
+
+df_encoded.dropna(subset=['Casualties'], inplace=True)
+
+
+
+# Feature Scaling
+
+from sklearn.preprocessing import StandardScaler
+
+scaler = StandardScaler()
+
+X_scaled = scaler.fit_transform(df_encoded.drop('Casualties', axis=1))
+
+y = df_encoded['Casualties']
+
+
+
+# Train-Test Split
+
+from sklearn.model_selection import train_test_split
+
+X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+
+
+
+# Model Building
+
+from sklearn.linear_model import LinearRegression
+
+model = LinearRegression()
+
+model.fit(X_train, y_train)
+
+
+
+# Evaluation
+
+from sklearn.metrics import mean_squared_error, r2_score
+
+y_pred = model.predict(X_test)
+
+print("MSE:", mean_squared_error(y_test, y_pred))
+
+print("R² Score:", r2_score(y_test, y_pred))
+
+
+
+# Make Predictions from New Input
+
+new_input = df.iloc[0].copy()
+
+new_input['Casualties'] = None
+
+new_df = pd.DataFrame([new_input])
+
+
+
+# Convert to DataFrame and Encode
+
+df_temp = pd.concat([df.drop('Casualties', axis=1), new_df.drop('Casualties', axis=1)], ignore_index=True)
+
+df_temp_encoded = pd.get_dummies(df_temp, drop_first=True)
+
+df_temp_encoded = df_temp_encoded.reindex(columns=df_encoded.drop('Casualties', axis=1).columns, fill_value=0)
+
+new_input_scaled = scaler.transform(df_temp_encoded.tail(1))
+
+
+
+# Predict the Final Grade
+
+predicted_casualties = model.predict(new_input_scaled)
+
+print("Predicted Casualties:", round(predicted_casualties[0], 2))
+
+
+
+# Deployment-Building an Interactive App
+
+!pip install gradio --quiet
+
+
+
+# Create a Prediction Function
+
+import gradio as gr
+
+def predict_casualties(Location, Latitude, Longitude, Weather_Condition, Road_Condition, Vehicles_Involved, Cause):
+
+    sample = {
+
+        'Location': Location,
+
+        'Latitude': Latitude,
+
+        'Longitude': Longitude,
+
+        'Weather Condition': Weather_Condition,
+
+        'Road Condition': Road_Condition,
+
+        'Vehicles Involved': Vehicles_Involved,
+
+        'Cause': Cause
+
+    }
+
+    df_sample = pd.DataFrame([sample])
+
+    temp_df = pd.concat([df.drop('Casualties', axis=1), df_sample], ignore_index=True)
+
+    temp_encoded = pd.get_dummies(temp_df, drop_first=True)
+
+    temp_encoded = temp_encoded.reindex(columns=df_encoded.drop('Casualties', axis=1).columns, fill_value=0)
+
+    scaled = scaler.transform(temp_encoded.tail(1))
+
+    pred = model.predict(scaled)
+
+    return round(pred[0], 2)
+
+
+
+# Create the Gradio Interface
+
+interface = gr.Interface(
+
+    fn=predict_casualties,
+
+    inputs=[
+
+        gr.Textbox(label="Location"),
+
+        gr.Number(label="Latitude"),
+
+        gr.Number(label="Longitude"),
+
+        gr.Textbox(label="Weather Condition"),
+
+        gr.Textbox(label="Road Condition"),
+
+        gr.Number(label="Vehicles Involved"),
+
+        gr.Textbox(label="Cause")
+
+    ],
+
+    outputs="number",
+
+    title="Traffic Accident Casualty Predictor",
+
+    description="Enter details about a traffic accident to predict the number of casualties."
+
+)
+
+interface.launch()k
